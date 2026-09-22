@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Controle de Pneus</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ LOGIN ============ -->
+  <div id="loginScreen">
+    <form class="login-card" id="loginForm" autocomplete="off">
+      <div class="login-brand">
+        <div class="mark">🛞</div>
+        <div>
+          <div class="name">Controle de Pneus</div>
+          <div class="sub">Estoque &amp; almoxarifado</div>
+        </div>
+      </div>
+      <div id="loginError" class="login-error" hidden></div>
+      <div id="storageNotice" class="login-error" style="background:var(--warn-soft);color:var(--warn);" hidden>
+        ⚠ Não foi possível conectar ao servidor. Verifique se "iniciar-servidor.bat" está aberto no computador do servidor e se este dispositivo está na mesma rede Wi‑Fi/cabo.
+      </div>
+      <div class="field">
+        <label for="loginUser">Usuário</label>
+        <input id="loginUser" type="text" placeholder="ex: admin" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="loginPass">Senha</label>
+        <input id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary" id="loginBtn" disabled>Conectando ao servidor…</button>
+      <div class="login-hint">Primeiro acesso? Usuário <b>admin</b>, senha <b>admin123</b>. Crie os usuários da equipe depois, em <b>Usuários</b>.<br>Os dados ficam salvos num computador da rede (o servidor) e aparecem em tempo real para todos os dispositivos conectados na mesma rede.</div>
+    </form>
+  </div>
+
+  <!-- ============ APP ============ -->
+  <div id="appScreen" hidden>
+    <div id="sidebarScrim"></div>
+    <aside id="sidebar">
+      <div class="brand">
+        <div class="mark">🛞</div>
+        <div class="name">Controle de<br>Pneus</div>
+      </div>
+      <nav>
+        <div class="nav-item active" data-page="dashboard"><span class="ic">▣</span>Painel</div>
+        <div class="nav-item" data-page="materials"><span class="ic">📦</span>Estoque</div>
+        <div class="nav-item" data-page="movements"><span class="ic">↕</span>Movimentação</div>
+        <div class="nav-item" data-page="count"><span class="ic">🧮</span>Contagem diária</div>
+        <div class="nav-item" data-page="history"><span class="ic">🕘</span>Histórico</div>
+        <div class="nav-item" id="navWarehousesItem" data-page="warehouses"><span class="ic">🏬</span>Almoxarifados</div>
+        <div class="nav-item" id="navUsersItem" data-page="users"><span class="ic">👤</span>Usuários</div>
+        <div class="nav-item" id="navBackupItem" data-page="backup"><span class="ic">💾</span>Backup</div>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="who">
+          <div class="avatar" id="whoAvatar">?</div>
+          <div class="meta">
+            <div class="uname" id="whoName">—</div>
+            <div class="role" id="whoRole">—</div>
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="logoutBtn" style="width:100%;justify-content:flex-start;">⎋ Sair</button>
+      </div>
+    </aside>
+
+    <div id="main">
+      <div id="topbar">
+        <button id="hamburger" aria-label="Menu">☰</button>
+        <h1 id="pageTitle">Painel</h1>
+        <select id="whSwitcher" class="wh-switcher" title="Almoxarifado em uso" disabled></select>
+        <span id="connBadge" class="conn-off" title="Conectando ao servidor…">🔄 Conectando…</span>
+        <div class="spacer"></div>
+      </div>
+
+      <div id="content">
+
+        <!-- ---- DASHBOARD ---- -->
+        <section class="page active" id="page-dashboard">
+          <div class="cards">
+            <div class="stat-card"><div class="label">Itens cadastrados</div><div class="value mono" id="statItems">0</div><div class="foot">materiais distintos</div></div>
+            <div class="stat-card"><div class="label">Unidades em estoque</div><div class="value mono" id="statUnits">0</div><div class="foot">soma de todas as quantidades</div></div>
+            <div class="stat-card"><div class="label">Movimentações hoje</div><div class="value mono" id="statToday">0</div><div class="foot">entradas, saídas e ajustes</div></div>
+            <div class="stat-card"><div class="label">Contagem de hoje</div><div class="value mono" id="statCount">0/0</div><div class="foot">materiais já conferidos</div></div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1.1fr .9fr;gap:18px;" id="dashGrid">
+            <div class="panel">
+              <div class="panel-head"><h2>Últimas movimentações</h2></div>
+              <div class="panel-body pad0 table-wrap">
+                <table><thead><tr><th>Data</th><th>Tipo</th><th>Material</th><th>Qtd.</th><th>Responsável</th></tr></thead>
+                <tbody id="dashMovBody"></tbody></table>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><h2>Unidades por categoria</h2></div>
+              <div class="panel-body" id="dashCatBody"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ---- MATERIALS ---- -->
+        <section class="page" id="page-materials">
+          <div class="banner" id="seedBanner" hidden>
+            🌱 Catálogo inicial com os <b>26 códigos da sua planilha</b> — as quantidades começam em <b>0</b>. Use Movimentação → Entrada (ou Ajuste, após a contagem física) para lançar o estoque real de cada um.
+            <button class="btn btn-ghost btn-sm" id="dismissSeedBanner">Entendi</button>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Materiais em estoque</h2>
+              <button class="btn btn-primary btn-sm" id="addMaterialBtn">+ Novo material</button>
+            </div>
+            <div class="panel-body">
+              <div class="toolbar">
+                <input type="search" id="matSearch" placeholder="Buscar por nome ou código…">
+                <select id="matCatFilter"><option value="">Todas categorias</option></select>
+                <select id="matWhFilter"><option value="">Todos os almoxarifados</option></select>
+              </div>
+            </div>
+            <div class="panel-body pad0 table-wrap">
+              <table><thead><tr><th>Código</th><th>Material</th><th>Categoria</th><th>Almoxarifado</th><th>Qtd.</th><th>Unid.</th><th></th></tr></thead>
+              <tbody id="materialsBody"></tbody></table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ---- MOVEMENTS (register) ---- -->
+        <section class="page" id="page-movements">
+          <div class="cards" id="movTypeCards">
+            <button class="stat-card" id="btnEntrada" style="cursor:pointer;text-align:left;border-color:var(--ok);">
+              <div class="label" style="color:var(--ok);">↓ Entrada</div>
+              <div style="font-size:12.5px;color:var(--ink-soft);">Recebimento de pneus novos, consertados ou recapados</div>
+            </button>
+            <button class="stat-card" id="btnSaida" style="cursor:pointer;text-align:left;border-color:var(--warn);">
+              <div class="label" style="color:var(--warn);">↑ Saída</div>
+              <div style="font-size:12.5px;color:var(--ink-soft);">Retirada por borracheiro para uso em ativo</div>
+            </button>
+            <button class="stat-card" id="btnAjuste" style="cursor:pointer;text-align:left;">
+              <div class="label">⚙ Ajuste</div>
+              <div style="font-size:12.5px;color:var(--ink-soft);">Correção manual após contagem física</div>
+            </button>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Movimentações de hoje</h2></div>
+            <div class="panel-body pad0 table-wrap">
+              <table><thead><tr><th>Hora</th><th>Tipo</th><th>Material</th><th>Qtd.</th><th>Ativo / Fornecedor</th><th>Responsável</th></tr></thead>
+              <tbody id="movTodayBody"></tbody></table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ---- DAILY COUNT ---- -->
+        <section class="page" id="page-count">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Contagem diária — <span id="countDateLabel"></span></h2>
+              <button class="btn btn-ghost btn-sm" id="clearCountBtn">🗑 Limpar contagem de hoje</button>
+              <button class="btn btn-primary btn-sm" id="exportCountBtn">⬇ Baixar Excel (.xlsx)</button>
+            </div>
+            <div class="panel-body" style="padding-bottom:0;">
+              <p style="margin:0 0 10px;color:var(--ink-soft);font-size:12.5px;">
+                Digite a quantidade contada fisicamente de cada pneu hoje. O app compara com a quantidade cadastrada no
+                sistema e mostra a diferença. Os valores ficam salvos no servidor (visíveis para todos os dispositivos, em tempo real) — use "Baixar Excel" para conferir ou arquivar a contagem do dia.
+              </p>
+              <div class="toolbar">
+                <input type="search" id="countSearch" placeholder="Buscar por nome ou código…">
+                <span class="mono" id="countProgress" style="font-size:12.5px;color:var(--ink-soft);"></span>
+              </div>
+            </div>
+            <div class="panel-body pad0 table-wrap">
+              <table><thead><tr><th>Código</th><th>Material</th><th>Almoxarifado</th><th>Qtd. sistema</th><th>Qtd. contada hoje</th><th>Diferença</th></tr></thead>
+              <tbody id="countBody"></tbody></table>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><h2>Histórico de contagens</h2></div>
+            <div class="panel-body pad0 table-wrap">
+              <table><thead><tr><th>Data</th><th>Contados</th><th></th></tr></thead>
+              <tbody id="countHistoryBody"></tbody></table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ---- HISTORY ---- -->
+        <section class="page" id="page-history">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Histórico de movimentações</h2>
+              <button class="btn btn-primary btn-sm" id="exportHistoryBtn">⬇ Baixar Excel (.xlsx)</button>
+            </div>
+            <div class="panel-body">
+              <div class="toolbar">
+                <input type="search" id="histSearch" placeholder="Buscar por material, ativo, fornecedor ou responsável…">
+                <select id="histTypeFilter">
+                  <option value="">Todos os tipos</option>
+                  <option value="entrada">Entrada</option>
+                  <option value="saida">Saída</option>
+                  <option value="ajuste">Ajuste</option>
+                </select>
+                <input type="date" id="histDateFrom">
+                <input type="date" id="histDateTo">
+              </div>
+            </div>
+            <div class="panel-body pad0 table-wrap">
+              <table><thead><tr><th>Data</th><th>Tipo</th><th>Material</th><th>Qtd.</th><th>Ativo / Fornecedor</th><th>Almoxarifado</th><th>Responsável</th><th>Obs.</th></tr></thead>
+              <tbody id="historyBody"></tbody></table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ---- WAREHOUSES ---- -->
+        <section class="page" id="page-warehouses">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Almoxarifados</h2>
+              <button class="btn btn-primary btn-sm" id="addWarehouseBtn">+ Novo almoxarifado</button>
+            </div>
+            <div class="panel-body pad0 table-wrap">
+              <table><thead><tr><th>Nome</th><th>Itens</th><th>Unidades</th><th></th></tr></thead>
+              <tbody id="warehousesBody"></tbody></table>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Fornecedores</h2>
+              <button class="btn btn-primary btn-sm" id="addSupplierBtn">+ Novo fornecedor</button>
+            </div>
+            <div class="panel-body pad0 table-wrap">
+              <table><thead><tr><th>Nome</th><th>Criado em</th><th></th></tr></thead>
+              <tbody id="suppliersBody"></tbody></table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ---- USERS ---- -->
+        <section class="page" id="page-users">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Usuários do sistema</h2>
+              <button class="btn btn-primary btn-sm" id="addUserBtn">+ Novo usuário</button>
+            </div>
+            <div class="panel-body pad0 table-wrap">
+              <table><thead><tr><th>Usuário</th><th>Perfil</th><th>Almoxarifado</th><th>Criado em</th><th></th></tr></thead>
+              <tbody id="usersBody"></tbody></table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ---- BACKUP ---- -->
+        <section class="page" id="page-backup">
+          <div class="panel">
+            <div class="panel-head"><h2>Exportar backup</h2></div>
+            <div class="panel-body" style="display:flex;flex-direction:column;gap:10px;">
+              <p id="exportBackupDesc" style="margin:0;color:var(--ink-soft);font-size:13px;"></p>
+              <div><button class="btn btn-primary btn-sm" id="exportBackupBtn" style="width:auto;">⬇ Exportar backup (.json)</button></div>
+            </div>
+          </div>
+          <div class="panel" id="importBackupPanel">
+            <div class="panel-head"><h2>Importar backup</h2></div>
+            <div class="panel-body" style="display:flex;flex-direction:column;gap:10px;">
+              <p style="margin:0;color:var(--ink-soft);font-size:13px;">
+                Escolha um arquivo <code>.json</code> exportado por este app. <b>Isso substitui todos os dados
+                salvos no servidor</b> — materiais, movimentações, almoxarifados e usuários (inclusive senhas) — para
+                todos os dispositivos conectados na rede.
+              </p>
+              <div>
+                <button class="btn btn-secondary btn-sm" id="importBackupBtn" style="width:auto;">⬆ Escolher arquivo de backup…</button>
+                <input type="file" id="importBackupInput" accept="application/json,.json" hidden>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div id="toast"></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

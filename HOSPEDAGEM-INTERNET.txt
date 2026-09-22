@@ -1,0 +1,115 @@
+CONTROLE DE PNEUS — colocando o sistema na internet (acesso de qualquer lugar)
+================================================================================
+
+Este guia é pra quem quer parar de depender de um computador específico ficar ligado na
+loja/escritório, e passar a acessar o sistema de qualquer lugar com internet — inclusive com o
+computador de hoje desligado.
+
+O QUE MUDA
+-----------
+Hoje todo mundo acessa digitando o IP do computador servidor (ex: http://192.168.0.15:3000), e
+isso só funciona na mesma rede Wi-Fi/cabo, com aquele computador ligado. Depois desse guia, todo
+mundo vai acessar por um endereço público da internet (algo como
+https://controle-de-pneus.up.railway.app), de qualquer lugar, a qualquer hora — inclusive pelo
+celular usando dados móveis, sem precisar estar na rede da loja.
+
+Isso precisa de um serviço de hospedagem pago (o sistema fica ligado 24 horas por dia, então
+alguém precisa "pagar a conta de luz" dele) — o custo estimado é por volta de R$25 a R$40 por mês,
+dependendo do uso. Vamos usar o Railway (railway.com), que é simples de configurar sem precisar
+mexer em linha de comando.
+
+IMPORTANTE — o que já foi reforçado nesta versão do sistema
+--------------------------------------------------------------
+Enquanto o sistema só rodava dentro da rede local, a senha só era checada na tela — não existia
+verificação nenhuma no servidor, então qualquer um que soubesse chamar a API diretamente
+conseguiria ler ou alterar os dados sem passar pela tela de login. Isso foi corrigido nesta
+versão: agora o login cria uma sessão de verdade (guardada com segurança num cookie), e toda ação
+no servidor exige login, com as permissões de admin/operador checadas ali também (não só
+escondendo botões na tela). O servidor também não manda mais o hash da senha de ninguém pra tela
+de ninguém — só o backup completo do admin, que precisa disso pra continuar restaurável. Depois de
+muitas tentativas de senha erradas seguidas pro mesmo usuário, o login trava por alguns minutos.
+
+Ainda assim, use uma senha de verdade (nada de "admin123" ou "1234") assim que o sistema estiver
+no ar — veja o Passo 5.
+
+PASSO 1 — Colocar os arquivos no GitHub
+-------------------------------------------
+O Railway pega o código direto de um repositório do GitHub. Se você já tem uma conta do GitHub
+(você mencionou ter mexido com isso antes, pra um link antigo do Vercel), pode reaproveitá-la.
+
+1. Entre em https://github.com e crie uma conta (se ainda não tiver) ou faça login.
+2. Clique no "+" no canto superior direito → "New repository".
+3. Dê um nome (ex: "controle-de-pneus"), marque como "Private" (privado — só você e quem você
+   convidar vê o código), e clique em "Create repository".
+4. Na página do repositório recém-criado, clique em "uploading an existing file" (ou "Add file" →
+   "Upload files").
+5. Extraia o zip deste app numa pasta no seu computador, e arraste TODOS os arquivos de dentro da
+   pasta "controle-de-pneus" (app.js, server.js, index.html, style.css, package.json,
+   .gitignore — não a pasta em si, o conteúdo dela) pra essa página do GitHub.
+6. Role até o fim da página e clique em "Commit changes".
+
+Não precisa subir a pasta "dados" (nem existe ainda, nesse zip) — ela é criada automaticamente
+pelo servidor, e o arquivo .gitignore já garante que ela nunca vá pro GitHub, mesmo se aparecer
+depois.
+
+PASSO 2 — Criar o serviço no Railway
+------------------------------------------
+1. Entre em https://railway.com e crie uma conta (dá pra entrar direto com a conta do GitHub).
+2. Clique em "New Project" → "Deploy from GitHub repo".
+3. Autorize o Railway a acessar sua conta do GitHub (só na primeira vez) e escolha o repositório
+   que você criou no Passo 1.
+4. O Railway vai reconhecer sozinho que é um app Node.js e começar a "buildar". Não precisa mexer
+   em nada ainda — só espere terminar (alguns minutos).
+
+PASSO 3 — Adicionar o armazenamento permanente (Volume)
+--------------------------------------------------------------
+Sem isso, toda vez que o Railway reiniciar o serviço (o que acontece de vez em quando, inclusive
+sempre que você atualizar o sistema), os dados cadastrados seriam perdidos. Um "Volume" resolve
+isso guardando os dados fora do "descartável".
+
+1. Na tela do seu projeto no Railway, clique com o botão direito no quadrado do seu serviço (ou
+   aperte Cmd+K / Ctrl+K) e escolha a opção de criar um "Volume".
+2. Quando perguntar qual serviço conectar, escolha o serviço do Controle de Pneus.
+3. No "Mount Path" (caminho de montagem), digite: /app/dados
+4. Pronto — não precisa configurar mais nada aqui. O servidor já é preparado pra reconhecer esse
+   volume automaticamente assim que ele existir.
+
+PASSO 4 — Gerar o endereço público
+----------------------------------------
+1. Clique no serviço → aba "Settings" → seção "Networking".
+2. Clique em "Generate Domain".
+3. O Railway vai mostrar um endereço parecido com
+   https://controle-de-pneus-production.up.railway.app — esse é o endereço que todo mundo vai
+   usar dali pra frente, de qualquer lugar, em vez do IP da rede local.
+
+PASSO 5 — Primeiro acesso: troque a senha do admin AGORA
+-----------------------------------------------------------------
+1. Abra o endereço público gerado no Passo 4.
+2. Entre com usuário "admin", senha "admin123" (a senha padrão de fábrica).
+3. Vá em Usuários, clique no ícone 🔑 ao lado do admin, e troque pra uma senha forte e única —
+   agora que o sistema está na internet, uma senha fraca ou repetida de outro site é um risco
+   real. Faça o mesmo pra qualquer outro usuário que ainda esteja com senha fraca.
+
+SE VOCÊ JÁ TINHA DADOS REAIS NO SERVIDOR LOCAL
+------------------------------------------------------
+O servidor hospedado começa vazio (catálogo zerado, só o usuário admin padrão). Pra levar os
+dados que já existem no computador local pra essa nova versão:
+1. No sistema antigo (rodando local), vá em Backup → Exportar (como admin) e baixe o arquivo.
+2. No sistema novo (endereço público), faça login como admin → Backup → Importar → escolha esse
+   arquivo baixado → confirme. Isso substitui os dados vazios pelos seus dados reais.
+
+COMO ATUALIZAR O SISTEMA NO FUTURO
+--------------------------------------
+Sempre que eu (ou você) tiver uma versão nova dos arquivos: suba os arquivos atualizados por cima
+dos antigos no mesmo repositório do GitHub (Passo 1, mas escolhendo "Upload files" de novo e
+confirmando a substituição) — o Railway detecta a mudança sozinho e atualiza o serviço automaticamente,
+sem perder os dados (eles ficam no Volume, separado do código).
+
+DIFERENÇA PARA A VERSÃO DE REDE LOCAL
+------------------------------------------
+Esse é o mesmo server.js de sempre — ele funciona tanto hospedado quanto rodando localmente na
+rede (LEIA-ME.txt). A diferença é só onde os dados ficam guardados: localmente, na pasta "dados"
+dentro do próprio app; hospedado, num Volume separado (configurado automaticamente assim que
+existe um volume conectado). Dá pra manter os dois no ar ao mesmo tempo se quiser, mas são bancos
+de dados separados — o que é feito num não aparece no outro, a não ser que você exporte/importe um
+backup entre eles manualmente.

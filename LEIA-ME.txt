@@ -1,0 +1,167 @@
+CONTROLE DE PNEUS — versão com servidor (tempo real na rede)
+==========================================================
+
+O QUE TEM NESTE PACOTE
+-----------------------
+- server.js                  -> o servidor. Um computador da rede roda este arquivo e guarda os
+                                 dados de todo mundo (dados/store.json é criado sozinho na primeira vez).
+- iniciar-servidor.bat        -> atalho para Windows: dê duplo clique nele para ligar o servidor
+                                 (chama "node server.js" por baixo dos panos).
+- index.html / style.css / app.js -> o app em si (a "tela"), servido pelo server.js para qualquer
+                                 navegador da rede — você não abre esses arquivos direto.
+
+NOVIDADE NESTA VERSÃO: agora existe um servidor. Um computador da rede (o "servidor") roda o
+programa e todos os outros dispositivos (celulares, tablets, outros PCs) acessam pelo navegador,
+digitando o endereço desse computador. Toda entrada, saída, ajuste e contagem aparece em tempo
+real para todo mundo conectado — sem precisar recarregar a página nem exportar/importar backup
+entre computadores.
+
+COMO EXECUTAR — PASSO A PASSO (Windows)
+------------------------------------------
+1. Escolha UM computador Windows da rede para ser o "servidor" (pode ser um PC da loja/escritório
+   que fique ligado durante o expediente). Coloque a pasta inteira (com todos os arquivos deste
+   pacote) nesse computador, numa pasta fixa (ex.: Área de Trabalho ou Documentos).
+
+2. Instale o Node.js nesse computador — só da primeira vez. Baixe em https://nodejs.org (escolha a
+   versão "LTS") e instale normalmente (clicando em "Avançar" até o fim). Não precisa configurar
+   nada.
+
+3. Dê duplo clique em "iniciar-servidor.bat". Vai abrir uma janela preta (o terminal) mostrando
+   algo como:
+
+     Neste computador, abra no navegador:
+       http://localhost:3000
+
+     De OUTROS celulares/computadores na MESMA rede Wi-Fi/cabo, abra:
+       http://192.168.0.XX:3000
+
+   DEIXE ESSA JANELA ABERTA — é ela que mantém o sistema funcionando. Se fechar essa janela (ou
+   desligar o computador), o sistema para de responder para todo mundo até você abrir de novo.
+
+4. Se o Windows perguntar sobre o "Firewall do Windows" na primeira vez (uma janela pedindo para
+   permitir acesso à rede), clique em "Permitir acesso". Isso é necessário para os outros
+   dispositivos conseguirem se conectar.
+
+5. No PRÓPRIO computador do servidor, abra o navegador e acesse http://localhost:3000
+
+6. Nos OUTROS dispositivos (celular, tablet, outro PC), conectados na MESMA rede Wi-Fi ou cabo,
+   abra o navegador e digite o segundo endereço que apareceu na janela do servidor (o que começa
+   com http://192.168... — o número exato aparece na tela de cada um, pode mudar dependendo da
+   rede). É a mesma ideia de acessar uma impressora ou câmera pela rede local.
+
+7. Login de primeiro acesso: usuário "admin", senha "admin123". Depois crie os usuários da equipe
+   em "Usuários".
+
+DOIS ALMOXARIFADOS (Almoxarifado Dois Irmãos e Almoxarifado Muribeca)
+--------------------------------------------------------------------
+O sistema já nasce com dois almoxarifados separados: "Almoxarifado Dois Irmãos" e "Almoxarifado
+Muribeca". Cada um tem seu próprio catálogo de pneus, suas próprias movimentações (entrada/saída/
+ajuste) e sua própria contagem diária — são estoques independentes, mesmo que o código do pneu
+seja parecido (os dois já vêm com os mesmos 26 códigos cadastrados, cada um com sua contagem zerada
+em separado).
+
+- ADMIN: enxerga os dois almoxarifados. No topo da tela aparece um seletor ("Todos os almoxarifados" / um
+  almoxarifado específico). Em "Todos os almoxarifados" o Painel, o Estoque, a Movimentação, a Contagem e o
+  Histórico mostram os dois juntos; escolhendo um almoxarifado específico, tudo fica filtrado só para
+  aquele almoxarifado. É só o admin que tem esse seletor liberado.
+- OPERADOR: fica travado em UM único almoxarifado, escolhido pelo admin ao criar o usuário (tela
+  Usuários → Novo usuário → campo "Almoxarifado"). O operador só vê e só mexe no estoque, nas
+  movimentações, na contagem e no histórico do seu próprio almoxarifado — o seletor aparece travado
+  (cinza) mostrando só o nome do almoxarifado dele. As telas "Almoxarifados" e "Usuários" ficam escondidas
+  para o operador.
+- Para mudar um operador de almoxarifado depois de criado, clique no ícone 🏬 (ao lado do nome dele) na
+  tela "Usuários" e escolha o novo almoxarifado — vale a partir do próximo login dele.
+- BACKUP DO OPERADOR: o operador tem acesso à tela "Backup", mas só pode EXPORTAR — e o arquivo
+  exportado contém apenas os dados do almoxarifado dele (materiais, movimentações e contagens daquele
+  almoxarifado), sem a lista de usuários/senhas do sistema. Só o admin pode importar um backup (a tela de
+  Importar fica escondida para o operador).
+- Ao registrar uma Entrada/Saída/Ajuste, o almoxarifado é sempre o do próprio pneu escolhido (cada
+  material já pertence a um almoxarifado fixo). Para o operador (travado em um só almoxarifado) e
+  para o admin já filtrado num almoxarifado específico, o campo "Almoxarifado" da tela de
+  movimentação é só uma confirmação. Já para o admin em "Todos os almoxarifados", a tela pede
+  primeiro para escolher o almoxarifado e só depois mostra os materiais dele — isso evita
+  escolher sem querer o código errado quando os dois almoxarifados têm o mesmo código de pneu
+  cadastrado.
+- Se você já vinha usando uma versão anterior deste sistema (com um único almoxarifado chamado
+  "Depósito"), pode atualizar sem medo: ao ligar o servidor com esta nova versão, os dados antigos
+  não são apagados nem misturados — o "Depósito" antigo continua existindo do jeito que estava,
+  como um terceiro almoxarifado separado, e os dois novos (Dois Irmãos e Muribeca) são criados do lado.
+  Se quiser, depois é só ir em "Almoxarifados" e renomear o "Depósito" antigo, ou mesclar manualmente os
+  dados como preferir.
+
+IMPORTANTE SOBRE O ENDEREÇO (IP)
+-----------------------------------
+O endereço "http://192.168.0.XX:3000" é o IP do computador servidor NA REDE LOCAL — ele pode mudar
+se o roteador atribuir outro número (por exemplo depois de reiniciar o roteador). Se um dia os
+outros dispositivos não conseguirem mais conectar, olhe de novo a janela do servidor (ela sempre
+mostra o endereço atual) ou rode "ipconfig" no Prompt de Comando do servidor e procure "Endereço
+IPv4". Para evitar isso mudar com frequência, você pode configurar um "IP fixo" para o computador
+servidor nas configurações de rede do Windows ou do roteador (opcional, não obrigatório).
+
+COMO OS DADOS SÃO SALVOS
+--------------------------
+Tudo fica salvo no computador que roda o servidor, num arquivo dentro da pasta "dados" (criada
+automaticamente na primeira vez que o servidor liga: dados/store.json). Esse arquivo é a "fonte da
+verdade" — nenhum dado fica só no celular ou só no navegador de quem está usando. Toda alteração
+(entrada, saída, ajuste, contagem, cadastro de material/almoxarifado/fornecedor/usuário) é enviada
+para o servidor, salva nesse arquivo, e repassada em tempo real para todos os dispositivos
+conectados. Se um dispositivo perder a conexão (ex.: saiu do Wi‑Fi), o app mostra "🔴 Sem conexão
+com o servidor" no topo da tela e volta a mostrar "🟢 Online" sozinho assim que a conexão voltar —
+não é preciso recarregar a página.
+Ainda é possível exportar/importar um backup em .json (tela "Backup"), útil para guardar uma cópia
+de segurança ou migrar tudo para outro computador servidor no futuro.
+
+ESTRUTURA DO CÓDIGO
+----------------------
+- server.js: servidor Node.js sem dependências externas (só módulos que já vêm com o Node — não
+  precisa rodar "npm install"). Guarda o estado em memória e no arquivo dados/store.json, expõe uma
+  API (/api/materiais, /api/movimentações, /api/contagens, etc.) e avisa os navegadores conectados
+  em tempo real por Server-Sent Events (/api/events) sempre que algo muda. Toda a lógica de cálculo
+  de quantidade (entrada soma, saída subtrai, ajuste corrige) roda no servidor, para evitar
+  problemas quando duas pessoas mexem ao mesmo tempo.
+- app.js: o cliente (o que roda no navegador de cada dispositivo). Não guarda mais nada em
+  localStorage além de uma preferência de tela; todo dado de negócio vem do servidor via
+  EventSource e toda alteração é enviada por fetch() para a API do servidor.
+- Telas (render*): renderDashboardPanels (com o gráfico de barras por categoria), renderMaterials,
+  renderMovementsToday, renderHistory, renderCount (contagem diária, com histórico de contagens),
+  renderWarehouses, renderSuppliers (fornecedores), renderUsers.
+- Modais: openMaterialModal, openWarehouseModal, openSupplierModal, openUserModal, openMovementModal
+  (Entrada — com fornecedor / Saída e Ajuste — com ativo).
+- Exportação para Excel: exportCountExcel(data) (contagem de um dia) e exportHistoryExcel()
+  (histórico de movimentações, respeitando os filtros aplicados na tela) — geram um .xlsx real na
+  hora, direto no navegador, sem precisar de internet nem de biblioteca externa.
+- Backup: exportBackup(), importBackupFile() — agora conversam com /api/backup/import no servidor.
+
+FUNCIONALIDADES
+-----------------
+- Painel com gráfico de barras das unidades em estoque por categoria (pneu novo, conserto,
+  recapado) e resumo das últimas movimentações — atualiza sozinho quando alguém mexe em qualquer
+  dispositivo da rede.
+- Indicador de conexão no topo da tela (🟢 Online / 🔴 Sem conexão).
+- Cadastro de materiais (nome, código, categoria, almoxarifado, quantidade, unidade).
+- Registro de Entrada (com fornecedor) / Saída (com ativo) / Ajuste, com data e responsável.
+- Fornecedores: já vem com "Carlos Eduardo", "Dafonte Renovadora" e "Renove Pneus" cadastrados;
+  novos fornecedores podem ser adicionados em Almoxarifados → Fornecedores.
+- Contagem diária: tela para digitar a quantidade contada fisicamente de cada pneu no dia,
+  comparando com a quantidade do sistema (diferença calculada na hora), com Histórico de
+  contagens (uma linha por dia contado) e exportação para Excel (.xlsx) — tanto do dia atual
+  quanto de qualquer dia anterior já contado.
+- Dois almoxarifados separados (Almoxarifado Dois Irmãos e Almoxarifado Muribeca), cada um com seu
+  próprio estoque, movimentações e contagem — veja a seção "DOIS ALMOXARIFADOS" acima. Admin enxerga
+  os dois (com seletor "Todos os almoxarifados" ou um específico); operador fica travado no almoxarifado
+  que foi atribuído a ele.
+- Histórico completo de movimentações, com filtros e exportação para Excel (.xlsx).
+- Gestão de usuários (login com usuário/senha).
+- Tudo em tempo real: qualquer alteração feita em um dispositivo aparece automaticamente nos
+  outros, sem recarregar a página.
+- Exportar/Importar backup em .json.
+
+DÚVIDAS FREQUENTES
+----------------------
+- "Preciso deixar o computador do servidor ligado o tempo todo que a loja/equipe for usar o
+  sistema?" — Sim, com a janela do "iniciar-servidor.bat" aberta.
+- "Posso usar em mais de um lugar (duas lojas, duas redes diferentes)?" — Não diretamente: todos
+  os dispositivos precisam estar na MESMA rede local do computador servidor. Para acesso pela
+  internet (fora da rede local), seria necessário outro tipo de configuração, não incluída aqui.
+- "Perco os dados se o servidor desligar?" — Não. Os dados ficam salvos em dados/store.json assim
+  que qualquer alteração é feita; ao ligar o servidor de novo, tudo volta do jeito que estava.

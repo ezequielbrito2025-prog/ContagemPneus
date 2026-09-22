@@ -1,0 +1,14 @@
+{
+  "name": "controle-de-pneus-servidor",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Servidor do app Controle de Pneus (sem dependencias externas) - roda tanto na rede local quanto hospedado na internet.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
