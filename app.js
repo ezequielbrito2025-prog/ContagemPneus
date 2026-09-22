@@ -130,7 +130,7 @@ async function apiPost(path, body){
     var res = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
     return await res.json();
   }catch(err){
-    return {ok:false, error:'Não foi possível falar com o servidor. Verifique se o computador do servidor está ligado e se este dispositivo está na mesma rede.'};
+    return {ok:false, error:'Não foi possível falar com o servidor. Verifique sua conexão com a internet (ou com a rede local, se for o caso) e tente de novo.'};
   }
 }
 
@@ -148,7 +148,7 @@ function setConnected(ok){
   var el = qs('connBadge');
   if(!el) return;
   if(ok){
-    el.textContent = '🟢 Online — mesma rede';
+    el.textContent = '🟢 Online';
     el.className = 'conn-on';
     el.title = 'Conectado ao servidor. As alterações aparecem em tempo real para todos os dispositivos.';
   } else {
@@ -193,7 +193,7 @@ function connectRealtime(){
     if(!firstStateLoaded){
       var notice = qs('storageNotice');
       if(notice){
-        notice.textContent = '⚠ Não foi possível conectar ao servidor. Verifique se "iniciar-servidor.bat" está aberto no computador do servidor e se este dispositivo está na mesma rede Wi‑Fi/cabo.';
+        notice.textContent = '⚠ Não foi possível conectar ao servidor. Verifique sua conexão com a internet (ou, na rede local, se "iniciar-servidor.bat" está aberto no computador do servidor e se este dispositivo está na mesma rede Wi‑Fi/cabo).';
         notice.hidden = false;
       }
     }
