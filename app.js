@@ -345,14 +345,62 @@ function onFirstStateLoaded(){
   if(currentUser){ renderAll(); }
 }
 
+/* ================= plano B: sem tempo real (SSE) nessa rede =================
+   Algumas redes (proxy/firewall corporativo, antivírus com "proteção web", alguns provedores de
+   internet móvel) bloqueiam ou travam conexões "text/event-stream" mesmo quando requisições HTTP
+   comuns funcionam sem problema nenhum. Sem esse plano B, a tela ficava presa pra sempre em
+   "Conectando ao servidor…" nessas redes — dependia só do SSE responder pra liberar o login.
+   Se o SSE demorar demais, busca o estado por uma chamada HTTP comum (uma vez só) e passa a
+   repetir essa busca periodicamente (só enquanto o SSE de verdade não assumir), pra continuar
+   tendo dados razoavelmente atualizados mesmo sem tempo real de verdade nessa rede. */
+var sseStallTimer = null;
+var sseHardUnlockTimer = null;
+var statePollTimer = null;
+
+function stopStatePoll(){ if(statePollTimer){ clearInterval(statePollTimer); statePollTimer=null; } }
+
+async function fetchStateFallback(){
+  try{
+    var res = await fetch('/api/state');
+    var data = await res.json();
+    if(data && data.ok){
+      if(data.unauthenticated){
+        if(currentUser){ doLogout('Sua sessão expirou. Faça login novamente.'); }
+      } else if(data.store){
+        setConnected(true);
+        applyServerState(data.store);
+        if(currentUser){ renderAll(); }
+      }
+    }
+  }catch(e){ /* essa rede realmente não fala com o servidor agora — segue tentando */ }
+  if(!firstStateLoaded){ onFirstStateLoaded(); } // mesmo sem resposta: destrava o login, ver doLogin()
+  if(!statePollTimer){ statePollTimer = setInterval(fetchStateFallback, 20000); }
+}
+
 function connectRealtime(){
   if(evtSource){ try{ evtSource.close(); }catch(e){} evtSource = null; }
+  if(sseStallTimer){ clearTimeout(sseStallTimer); }
+  if(sseHardUnlockTimer){ clearTimeout(sseHardUnlockTimer); }
   try{ evtSource = new EventSource('/api/events'); }
-  catch(err){ console.error(err); setConnected(false); return; }
+  catch(err){ console.error(err); setConnected(false); fetchStateFallback(); return; }
 
-  evtSource.onopen = function(){ setConnected(true); flushOfflineQueue(); };
+  // Se em alguns segundos o SSE não respondeu nada, tenta o plano B (sem esperar mais).
+  sseStallTimer = setTimeout(function(){ if(!firstStateLoaded) fetchStateFallback(); }, 5000);
+  // Garantia final: mesmo que o plano B também não responda nada (rede realmente sem saída
+  // pro servidor), o login nunca fica travado pra sempre — quem tentar entrar recebe o aviso
+  // de erro normal do formulário, em vez de um botão desabilitado sem explicação.
+  sseHardUnlockTimer = setTimeout(function(){ if(!firstStateLoaded) onFirstStateLoaded(); }, 9000);
+
+  evtSource.onopen = function(){
+    setConnected(true);
+    if(sseStallTimer){ clearTimeout(sseStallTimer); sseStallTimer=null; }
+    stopStatePoll();
+    flushOfflineQueue();
+  };
   evtSource.onmessage = function(ev){
     setConnected(true);
+    if(sseStallTimer){ clearTimeout(sseStallTimer); sseStallTimer=null; }
+    stopStatePoll();
     var data;
     try{ data = JSON.parse(ev.data); }catch(e){ return; }
     if(data && data.unauthenticated){
@@ -376,7 +424,8 @@ function connectRealtime(){
         notice.hidden = false;
       }
     }
-    // o próprio navegador tenta reconectar automaticamente (EventSource); não precisamos fazer nada aqui.
+    // o próprio navegador tenta reconectar automaticamente (EventSource); não precisamos fazer
+    // nada aqui — o plano B (fetchStateFallback) já cobre o caso de essa reconexão nunca dar certo.
   };
 }
 

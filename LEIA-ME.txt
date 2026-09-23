@@ -190,3 +190,11 @@ DÚVIDAS FREQUENTES
   desligado), veja o arquivo HOSPEDAGEM-INTERNET.txt incluído neste pacote.
 - "Perco os dados se o servidor desligar?" — Não. Os dados ficam salvos em dados/store.json assim
   que qualquer alteração é feita; ao ligar o servidor de novo, tudo volta do jeito que estava.
+- "A tela de login ficou travada em 'Conectando ao servidor…' num computador/celular específico"
+  — Espere até uns 10 segundos: o sistema tenta o tempo real (SSE) primeiro e, se essa rede
+  específica bloquear esse tipo de conexão (comum em rede corporativa com proxy/firewall, ou
+  antivírus com "proteção web"), ele muda sozinho para um jeito alternativo de buscar os dados e
+  libera o login — sem tempo real nesse aparelho específico, mas funcionando. Se depois de uns 10
+  segundos ainda estiver travado, o problema é outro (endereço digitado errado, ou o servidor
+  realmente fora do ar) — confira o endereço e, se for a versão de rede local, se a janela do
+  servidor está mesmo aberta.

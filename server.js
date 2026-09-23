@@ -363,6 +363,18 @@ function handleApi(req, res, pathname, body, session) {
       return sendJson(res, 200, { ok: true });
     }
 
+    if (pathname === '/api/state' && req.method === 'GET') {
+      // O mesmo estado que normalmente chega por /api/events (tempo real, streaming), mas como
+      // uma resposta HTTP comum. Algumas redes (proxy/firewall corporativo, certos antivírus com
+      // "proteção web", alguns provedores de internet móvel) bloqueiam ou travam conexões do tipo
+      // "text/event-stream" mesmo quando requisições HTTP normais funcionam sem problema — nesses
+      // casos a tela de login ficava presa para sempre em "Conectando ao servidor…", porque
+      // dependia só do SSE pra saber que o servidor respondeu. Essa rota é o plano B do cliente
+      // quando o SSE demora demais pra responder.
+      if (!session) return sendJson(res, 200, { ok: true, unauthenticated: true });
+      return sendJson(res, 200, { ok: true, store: publicStore(store) });
+    }
+
     // Todas as rotas abaixo desta linha exigem login.
     if (!session) return sendJson(res, 401, { ok: false, error: 'Sessão expirada. Faça login novamente.' });
     var isSessionAdmin = session.role === 'admin';
