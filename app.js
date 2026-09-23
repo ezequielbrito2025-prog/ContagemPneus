@@ -27,6 +27,12 @@ var countInputTimers = {};
 // Movimentação, Contagem, Histórico) mostram e em qual almoxarifado uma nova movimentação é lançada.
 var ALL_WAREHOUSES = '__all__';
 var activeWarehouseId = null;
+// Modo offline: Entrada/Saída/Ajuste e Contagem diária continuam funcionando sem internet —
+// ficam guardadas neste aparelho (localStorage) e são enviadas pro servidor sozinhas assim que
+// a conexão voltar. Ver bloco "================= offline =================" mais abaixo.
+var isOnlineFlag = false;
+var flushingOfflineQueue = false;
+var offlineRetryTimer = null;
 
 try { seedBannerDismissed = localStorage.getItem('tireapp_seed_dismissed') === '1'; } catch(e){}
 
@@ -142,19 +148,191 @@ function applyServerState(newStore){
   suppliers = store.suppliers || [];
   users = store.users || [];
   if(!store.dailyCounts) store.dailyCounts = {};
+  /* Mantém quem já está com a tela aberta sempre com o papel/almoxarifado ATUAIS do cadastro,
+     não com o que valia no momento em que ela entrou. Sem isso, depois que o admin importa um
+     backup (ou muda o almoxarifado de alguém), quem já estava logado ficava vendo uma tela
+     vazia — os dados novos chegavam por aqui, mas o filtro ainda usava o almoxarifado antigo. */
+  if(currentUser){
+    var freshMe = users.find(function(u){ return u.username === currentUser.username; });
+    if(freshMe){
+      currentUser.role = freshMe.role;
+      currentUser.warehouseId = freshMe.warehouseId || null;
+    } else if(firstStateLoaded){
+      doLogout('Sua conta não existe mais neste sistema. Faça login novamente.');
+      return;
+    }
+    saveOfflineSnapshot();
+  }
+}
+
+/* ================= offline =================
+   Entrada, Saída, Ajuste e Contagem diária (as ações do dia a dia, feitas no chão do
+   almoxarifado) continuam funcionando sem internet: ficam guardadas neste aparelho
+   (localStorage) e são enviadas ao servidor sozinhas assim que a conexão voltar — sem
+   precisar reabrir a tela nem refazer nada. Cadastros (materiais, usuários, almoxarifados,
+   fornecedores) e backup continuam exigindo conexão, por serem ações mais raras e mais
+   arriscadas de fazer sem internet (podem conflitar com o que outra pessoa mexeu enquanto
+   isso). O login também funciona offline PARA QUEM JÁ ENTROU NESTE APARELHO antes: a tela
+   pula direto pro painel usando os últimos dados salvos aqui, e confirma a sessão de
+   verdade com o servidor assim que possível. Nunca guardamos senha nem hash de senha aqui —
+   só o último estado (materiais, movimentações etc.) e os dados de quem já estava logado. */
+var OFFLINE_SNAPSHOT_KEY = 'pneus_offline_snapshot_v1';
+var OFFLINE_QUEUE_KEY = 'pneus_offline_queue_v1';
+
+function isOnline(){ return isOnlineFlag; }
+
+function loadOfflineSnapshot(){
+  try{ var raw = localStorage.getItem(OFFLINE_SNAPSHOT_KEY); return raw ? JSON.parse(raw) : null; }
+  catch(e){ return null; }
+}
+function saveOfflineSnapshot(){
+  if(!currentUser) return;
+  try{ localStorage.setItem(OFFLINE_SNAPSHOT_KEY, JSON.stringify({savedAt:new Date().toISOString(), currentUser:currentUser, store:store})); }
+  catch(e){ /* localStorage indisponível/cheio: só não vai ter modo offline neste aparelho */ }
+}
+function clearOfflineSnapshot(){ try{ localStorage.removeItem(OFFLINE_SNAPSHOT_KEY); }catch(e){} }
+
+function loadOfflineQueue(){
+  try{ var raw = localStorage.getItem(OFFLINE_QUEUE_KEY); var q = raw ? JSON.parse(raw) : []; return Array.isArray(q) ? q : []; }
+  catch(e){ return []; }
+}
+function saveOfflineQueue(q){ try{ localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q)); }catch(e){} }
+
+/* Registra uma ação pra ser enviada depois, aplica o efeito dela na tela na hora (otimista —
+   é exatamente o que o servidor vai calcular quando receber, contanto que nada mais mude esse
+   mesmo material/contagem enquanto isso) e guarda o novo estado como o "último conhecido". */
+function enqueueOfflineAction(path, body, label, optimisticApply){
+  var item = {localId:'off_'+Date.now()+'_'+Math.random().toString(36).slice(2), path:path, body:body, label:label, createdAt:new Date().toISOString()};
+  var q = loadOfflineQueue(); q.push(item); saveOfflineQueue(q);
+  try{ optimisticApply && optimisticApply(); }catch(e){ console.error('falha aplicando ação offline na tela', e); }
+  saveOfflineSnapshot();
+  updateConnBadge();
+  scheduleOfflineRetry();
+  return {ok:true, offline:true, queued:true};
+}
+
+/* Como apiPost(), mas para as ações que podem ser feitas offline: se não tiver conexão (ou a
+   tentativa de rede falhar), guarda a ação em vez de mostrar erro pro usuário. */
+async function apiPostQueueable(path, body, label, optimisticApply){
+  if(!isOnline()){ return enqueueOfflineAction(path, body, label, optimisticApply); }
+  try{
+    var res = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
+    return await res.json();
+  }catch(err){
+    return enqueueOfflineAction(path, body, label, optimisticApply);
+  }
+}
+
+/* Aplica na tela, na hora, o mesmo cálculo que o servidor faria pra uma movimentação — usado
+   só quando a ação vai pra fila offline, pra não deixar a tela "atrasada" até sincronizar. */
+function applyMovementLocally(body){
+  var mat = materials.find(function(m){ return m.id === body.materialId; });
+  if(!mat) return;
+  var prevQty = Number(mat.quantity || 0);
+  var qty = Number(body.quantity);
+  var newQty;
+  if(body.type === 'entrada') newQty = prevQty + qty;
+  else if(body.type === 'saida') newQty = prevQty - qty;
+  else newQty = qty; // ajuste: quantidade é o valor final, não uma diferença
+  mat.quantity = newQty; mat.updatedAt = new Date().toISOString();
+  var wh = warehouses.find(function(w){ return w.id === mat.warehouseId; });
+  var supName = body.supplierId ? (suppliers.find(function(s){return s.id===body.supplierId;})||{}).name || '' : '';
+  movements.unshift({
+    id: 'pendente_'+Date.now()+'_'+Math.random().toString(36).slice(2),
+    materialId: mat.id, materialCode: mat.code, materialName: mat.name, type: body.type,
+    quantity: body.type === 'ajuste' ? Math.abs(newQty - prevQty) : qty,
+    previousQty: prevQty, newQty: newQty, date: body.date, asset: body.asset || '',
+    supplierId: body.supplierId || '', supplierName: supName, person: body.person || '',
+    warehouseId: mat.warehouseId, warehouseName: wh ? wh.name : '', note: body.note || '',
+    createdAt: new Date().toISOString(), createdBy: currentUser ? currentUser.username : '',
+    pendingSync: true
+  });
+  store.materials = materials; store.movements = movements;
+}
+function applyCountLocally(body){
+  if(!store.dailyCounts[body.date]) store.dailyCounts[body.date] = {};
+  if(body.value === null || body.value === undefined || body.value === ''){ delete store.dailyCounts[body.date][body.materialId]; }
+  else { store.dailyCounts[body.date][body.materialId] = Number(body.value); }
+}
+function applyCountClearLocally(date, whId){
+  if(!store.dailyCounts[date]) store.dailyCounts[date] = {};
+  var whMatIds = {};
+  materials.forEach(function(m){ if(m.warehouseId === whId) whMatIds[m.id] = true; });
+  if(whId && whId !== ALL_WAREHOUSES){
+    Object.keys(store.dailyCounts[date]).forEach(function(mid){ if(whMatIds[mid]) delete store.dailyCounts[date][mid]; });
+  } else {
+    store.dailyCounts[date] = {};
+  }
+}
+
+function scheduleOfflineRetry(){
+  if(offlineRetryTimer) return;
+  offlineRetryTimer = setInterval(function(){
+    if(loadOfflineQueue().length===0){ clearInterval(offlineRetryTimer); offlineRetryTimer=null; return; }
+    flushOfflineQueue();
+  }, 15000);
+}
+
+/* Envia as ações pendentes pro servidor, uma de cada vez e na ordem em que foram feitas (isso
+   importa pro Ajuste, que grava um valor final, não uma diferença). Cada uma que o servidor
+   conseguir responder (mesmo recusando) sai da fila; só continua na fila quem nem chegou a
+   falar com o servidor. O estado real da tela vem, como sempre, pelas atualizações em tempo
+   real (SSE) — isso aqui só garante que o que foi feito offline chegue no servidor. */
+async function flushOfflineQueue(){
+  if(flushingOfflineQueue) return;
+  var q = loadOfflineQueue();
+  if(!q.length) return;
+  var hadPending = true;
+  flushingOfflineQueue = true;
+  updateConnBadge();
+  while(q.length){
+    var item = q[0];
+    var data;
+    try{
+      var res = await fetch(item.path, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(item.body||{})});
+      data = await res.json();
+    }catch(err){
+      break; // ainda sem rede de verdade: para por aqui e tenta de novo na próxima reconexão
+    }
+    q.shift(); saveOfflineQueue(q);
+    if(!data || data.ok===false){
+      toast('Uma ação feita offline ('+(item.label||'ação')+') não pôde ser confirmada: '+((data&&data.error)||'erro desconhecido')+'. Os dados certos já estão atualizados na tela.');
+    }
+  }
+  flushingOfflineQueue = false;
+  updateConnBadge();
+  if(hadPending && loadOfflineQueue().length===0) toast('Tudo sincronizado com o servidor.');
 }
 
 function setConnected(ok){
+  isOnlineFlag = ok;
+  updateConnBadge();
+}
+
+function updateConnBadge(){
   var el = qs('connBadge');
   if(!el) return;
-  if(ok){
-    el.textContent = '🟢 Online';
-    el.className = 'conn-on';
-    el.title = 'Conectado ao servidor. As alterações aparecem em tempo real para todos os dispositivos.';
+  var pending = loadOfflineQueue().length;
+  if(isOnlineFlag){
+    if(pending>0){
+      el.textContent = '🟡 Online — enviando '+pending+' pendente'+(pending>1?'s':'')+'…';
+      el.className = 'conn-on';
+      el.title = 'Conectado. Enviando pro servidor o que foi feito offline.';
+    } else {
+      el.textContent = '🟢 Online';
+      el.className = 'conn-on';
+      el.title = 'Conectado ao servidor. As alterações aparecem em tempo real para todos os dispositivos.';
+    }
   } else {
-    el.textContent = '🔴 Sem conexão com o servidor';
-    el.className = 'conn-off';
-    el.title = 'Não foi possível falar com o servidor agora. Tentando reconectar automaticamente…';
+    if(pending>0){
+      el.textContent = '🔴 Offline — '+pending+' pendente'+(pending>1?'s':'')+' pra sincronizar';
+      el.className = 'conn-off';
+      el.title = 'Sem conexão agora. Entrada, Saída, Ajuste e Contagem continuam funcionando: fica guardado neste aparelho e é enviado assim que a internet voltar.';
+    } else {
+      el.textContent = '🔴 Sem conexão com o servidor';
+      el.className = 'conn-off';
+      el.title = 'Não foi possível falar com o servidor agora. Tentando reconectar automaticamente…';
+    }
   }
 }
 
@@ -172,7 +350,7 @@ function connectRealtime(){
   try{ evtSource = new EventSource('/api/events'); }
   catch(err){ console.error(err); setConnected(false); return; }
 
-  evtSource.onopen = function(){ setConnected(true); };
+  evtSource.onopen = function(){ setConnected(true); flushOfflineQueue(); };
   evtSource.onmessage = function(ev){
     setConnected(true);
     var data;
@@ -187,12 +365,13 @@ function connectRealtime(){
     applyServerState(data);
     if(!firstStateLoaded){ onFirstStateLoaded(); }
     else if(currentUser){ renderAll(); }
+    flushOfflineQueue();
   };
   evtSource.onerror = function(){
     setConnected(false);
     if(!firstStateLoaded){
       var notice = qs('storageNotice');
-      if(notice){
+      if(notice && !currentUser){
         notice.textContent = '⚠ Não foi possível conectar ao servidor. Verifique sua conexão com a internet (ou, na rede local, se "iniciar-servidor.bat" está aberto no computador do servidor e se este dispositivo está na mesma rede Wi‑Fi/cabo).';
         notice.hidden = false;
       }
@@ -203,6 +382,11 @@ function connectRealtime(){
 
 /* ================= daily count helpers ================= */
 function todayCountMap(){
+  // enterApp() já chama renderAll() na hora do login, antes de os dados chegarem pela conexão
+  // em tempo real (SSE) — nesse instante bem curto, "store" ainda pode estar nulo. Sem essa
+  // proteção, isso jogava um erro de JavaScript no meio do primeiro render (a tela se corrigia
+  // sozinha segundos depois, quando os dados chegavam, mas o erro não devia acontecer).
+  if(!store) return {};
   var today = todayStr();
   if(!store.dailyCounts) store.dailyCounts = {};
   if(!store.dailyCounts[today]) store.dailyCounts[today] = {};
@@ -233,16 +417,17 @@ function renderStats(){
   qs('statUnits').textContent = mats.reduce(function(a,m){return a+Number(m.quantity||0);},0);
   var today = todayStr();
   qs('statToday').textContent = movs.filter(function(m){return m.date===today;}).length;
-  var counts = (store.dailyCounts && store.dailyCounts[today]) ? store.dailyCounts[today] : {};
+  var counts = (store && store.dailyCounts && store.dailyCounts[today]) ? store.dailyCounts[today] : {};
   var countedN = mats.filter(function(m){ return hasCountValue(counts[m.id]); }).length;
   qs('statCount').textContent = countedN + '/' + mats.length;
 }
 
-function typePill(t){
-  if(t==='entrada') return '<span class="pill pill-in">↓ Entrada</span>';
-  if(t==='saida') return '<span class="pill pill-out">↑ Saída</span>';
-  if(t==='transferencia') return '<span class="pill pill-transfer">⇄ Transferência</span>';
-  return '<span class="pill pill-adj">⚙ Ajuste</span>';
+function typePill(t, pending){
+  var badge = pending ? ' <span class="pill" style="background:var(--warn);color:#fff;" title="Feito offline — ainda não confirmado pelo servidor">⏳ pendente</span>' : '';
+  if(t==='entrada') return '<span class="pill pill-in">↓ Entrada</span>'+badge;
+  if(t==='saida') return '<span class="pill pill-out">↑ Saída</span>'+badge;
+  if(t==='transferencia') return '<span class="pill pill-transfer">⇄ Transferência</span>'+badge;
+  return '<span class="pill pill-adj">⚙ Ajuste</span>'+badge;
 }
 function typeLabelText(t){
   if(t==='entrada') return 'Entrada';
@@ -308,7 +493,7 @@ function renderDashboardPanels(){
   var movBody = qs('dashMovBody');
   var recent = movementsInScope().slice(0,8);
   movBody.innerHTML = recent.length ? recent.map(function(m){
-    return '<tr><td class="mono">'+fmtDate(m.date)+'</td><td>'+typePill(m.type)+'</td><td>'+esc(m.materialName)+'</td>'+
+    return '<tr><td class="mono">'+fmtDate(m.date)+'</td><td>'+typePill(m.type, m.pendingSync)+'</td><td>'+esc(m.materialName)+'</td>'+
       '<td class="mono">'+esc(m.quantity)+'</td><td>'+esc(m.person||'—')+'</td></tr>';
   }).join('') : '<tr class="empty-row"><td colspan="5">Sem movimentações ainda.</td></tr>';
 
@@ -365,7 +550,7 @@ function renderMovementsToday(){
   var list = movementsInScope().filter(function(m){return m.date===today;});
   var body = qs('movTodayBody');
   body.innerHTML = list.length ? list.map(function(m){
-    return '<tr><td class="mono">'+fmtDateTime(m.createdAt).split(' ')[1]+'</td><td>'+typePill(m.type)+'</td><td>'+esc(m.materialName)+'</td>'+
+    return '<tr><td class="mono">'+fmtDateTime(m.createdAt).split(' ')[1]+'</td><td>'+typePill(m.type, m.pendingSync)+'</td><td>'+esc(m.materialName)+'</td>'+
       '<td class="mono">'+esc(m.quantity)+'</td><td class="mono">'+esc(assetOrSupplierText(m))+'</td><td>'+esc(m.person||'—')+'</td></tr>';
   }).join('') : '<tr class="empty-row"><td colspan="6">Nenhuma movimentação hoje ainda. Use os botões acima para registrar.</td></tr>';
 }
@@ -391,7 +576,7 @@ function renderHistory(){
   var list = getHistoryFilteredList();
   var body = qs('historyBody');
   body.innerHTML = list.length ? list.map(function(m){
-    return '<tr><td class="mono">'+fmtDate(m.date)+'</td><td>'+typePill(m.type)+'</td><td>'+esc(m.materialName)+' <span class="mono" style="color:var(--ink-faint);">'+esc(m.materialCode)+'</span></td>'+
+    return '<tr><td class="mono">'+fmtDate(m.date)+'</td><td>'+typePill(m.type, m.pendingSync)+'</td><td>'+esc(m.materialName)+' <span class="mono" style="color:var(--ink-faint);">'+esc(m.materialCode)+'</span></td>'+
       '<td class="mono">'+esc(m.quantity)+'</td><td class="mono">'+esc(assetOrSupplierText(m))+'</td><td>'+movWarehouseLabel(m)+'</td>'+
       '<td>'+esc(m.person||'—')+'</td><td>'+esc(m.note||'—')+'</td></tr>';
   }).join('') : '<tr class="empty-row"><td colspan="8">Nenhuma movimentação encontrada para esse filtro.</td></tr>';
@@ -482,7 +667,7 @@ function diffPillHtml(raw, systemQty){
    ou baixar o Excel de um dia anterior — a edição continua sendo sempre a do dia de hoje. */
 function renderCountHistory(){
   var body = qs('countHistoryBody');
-  if(!body) return;
+  if(!body || !store) return;
   var today = todayStr();
   var dates = Object.keys(store.dailyCounts||{}).filter(function(d){
     var counts = store.dailyCounts[d]||{};
@@ -753,17 +938,25 @@ function openMovementModal(type){
       var whId = whSel.value;
       var note = root.querySelector('#movNote').value.trim();
       if(!m || isNaN(qtyInput) || qtyInput<0 || !date || !person){ errEl.textContent='Preencha os campos obrigatórios.'; errEl.hidden=false; return; }
+      // Confere estoque disponível já na tela (o servidor confere de novo, mas sem internet
+      // ninguém vai poder avisar — então essa checagem evita guardar uma saída que não passaria).
+      if(type==='saida' && qtyInput > Number(m.quantity||0)){
+        errEl.textContent = 'Quantidade indisponível. Em estoque: '+m.quantity+' '+m.unit+'.'; errEl.hidden=false; return;
+      }
       var btn = root.querySelector('button[type="submit"]'); btn.disabled = true;
-      var resp = await apiPost('/api/movements', {
+      var movBody = {
         type:type, materialId:m.id, quantity:qtyInput, date:date, asset:asset,
         supplierId:supplierId, person:person, warehouseId:whId, note:note,
         username: currentUser.username
-      });
+      };
+      var movLabel = (L.title)+' — '+m.code+' ('+qtyInput+' '+m.unit+')';
+      var resp = await apiPostQueueable('/api/movements', movBody, movLabel, function(){ applyMovementLocally(movBody); });
       btn.disabled = false;
       if(!resp.ok){ errEl.textContent = resp.error || 'Não foi possível registrar.'; errEl.hidden=false; return; }
-      toast('Movimentação registrada.');
+      toast(resp.offline ? 'Sem internet agora — movimentação guardada neste aparelho e será enviada quando a conexão voltar.' : 'Movimentação registrada.');
       closeModal();
       setPage('movements');
+      if(resp.offline) renderAll();
     });
   });
 }
@@ -1149,11 +1342,12 @@ function wireStaticEvents(){
       root.querySelector('#ccCancel').addEventListener('click', closeModal);
       root.querySelector('#ccConfirm').addEventListener('click', async function(){
         var btn = root.querySelector('#ccConfirm'); btn.disabled = true;
-        var resp = await apiPost('/api/counts/'+today+'/clear', {warehouseId: whId});
+        var resp = await apiPostQueueable('/api/counts/'+today+'/clear', {warehouseId: whId}, 'Limpar contagem de hoje', function(){ applyCountClearLocally(today, isAdmin() ? whId : currentUser.warehouseId); });
         btn.disabled = false;
         if(!resp.ok){ toast(resp.error || 'Não foi possível limpar a contagem.'); return; }
-        toast('Contagem de hoje limpa.');
+        toast(resp.offline ? 'Sem internet agora — contagem limpa neste aparelho e será enviada quando a conexão voltar.' : 'Contagem de hoje limpa.');
         closeModal();
+        if(resp.offline) renderAll();
       });
     });
   });
@@ -1170,8 +1364,11 @@ function wireStaticEvents(){
     clearTimeout(countInputTimers[mid]);
     countInputTimers[mid] = setTimeout(async function(){
       var today = todayStr();
-      var resp = await apiPost('/api/counts', {date:today, materialId:mid, value: val===''?null:Number(val)});
-      if(!resp.ok){ toast(resp.error || 'Não foi possível salvar a contagem.'); }
+      var countBody = {date:today, materialId:mid, value: val===''?null:Number(val)};
+      // Contagem é frequente (uma chamada por item digitado) — sem internet, guarda sem toast
+      // a cada tecla; o selo "🔴 Offline — N pendentes" no topo já avisa que está acumulando.
+      var resp = await apiPostQueueable('/api/counts', countBody, 'Contagem — '+(m?m.code:mid), function(){ applyCountLocally(countBody); });
+      if(!resp.ok && !resp.offline){ toast(resp.error || 'Não foi possível salvar a contagem.'); }
     }, 350);
   });
 
@@ -1362,13 +1559,20 @@ async function doLogin(e){
 }
 function doLogout(msg){
   var wasLoggedIn = !!currentUser;
+  var pending = loadOfflineQueue().length;
   currentUser = null;
   activeWarehouseId = null;
   qs('appScreen').hidden = true;
   qs('loginScreen').hidden = false;
   qs('loginPass').value = '';
   if(typeof msg === 'string' && msg){ showLoginError(msg); } else { qs('loginError').hidden = true; }
+  // Some com o "entrar direto offline" pra essa pessoa neste aparelho — quem sair de propósito
+  // (ou tiver a sessão invalidada) precisa passar pela tela de login de novo. A fila de ações
+  // ainda não enviadas continua guardada e é enviada assim que alguém abrir o sistema com
+  // internet neste mesmo aparelho, mesmo que seja outra pessoa entrando.
+  clearOfflineSnapshot();
   if(wasLoggedIn){
+    if(pending>0){ toast('Você tem '+pending+' ação'+(pending>1?'ões':'')+' feita'+(pending>1?'s':'')+' offline ainda não enviada'+(pending>1?'s':'')+' ao servidor. Elas serão enviadas assim que este aparelho tiver internet de novo.'); }
     apiPost('/api/logout', {}).catch(function(){});
     connectRealtime();
   }
@@ -1401,14 +1605,32 @@ async function tryRestoreSession(){
       currentUser = data.user;
       connectRealtime();
       enterApp();
+      return;
     }
-  }catch(e){ /* sem sessão — segue pra tela de login */ }
+    // O servidor respondeu, mas disse que não tem sessão válida (ex: expirou de verdade) —
+    // aí é caso normal de pedir login, não de entrar no modo offline.
+  }catch(e){
+    // Nem deu pra falar com o servidor (sem internet, ou ele está fora do ar). Se essa pessoa
+    // já tinha entrado neste mesmo aparelho antes, deixa entrar direto com os últimos dados
+    // salvos aqui — sem senha nenhuma, só reaproveitando a sessão (cookie) que o navegador já
+    // guarda sozinho. Assim que a internet voltar, a conexão em tempo real confirma a sessão de
+    // verdade com o servidor (e desloga sozinho se ela não valer mais).
+    var snap = loadOfflineSnapshot();
+    if(snap && snap.currentUser && snap.store){
+      currentUser = snap.currentUser;
+      applyServerState(snap.store);
+      enterApp();
+      setConnected(false);
+      toast('Sem conexão com o servidor — mostrando os últimos dados salvos neste aparelho. Entrada, Saída, Ajuste e Contagem continuam funcionando e sincronizam sozinhos quando a internet voltar.');
+    }
+  }
 }
 function init(){
   wireStaticEvents();
   qs('loginForm').addEventListener('submit', doLogin);
   connectRealtime();
   tryRestoreSession();
+  if(loadOfflineQueue().length>0) scheduleOfflineRetry();
 }
 if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); } else { init(); }
 

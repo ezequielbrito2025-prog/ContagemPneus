@@ -127,7 +127,14 @@ function getSession(req) {
   var sess = sessions[token];
   if (!sess) return null;
   if (Date.now() - sess.createdAt > SESSION_MAX_AGE_MS) { delete sessions[token]; return null; }
-  return { token: token, username: sess.username, role: sess.role, warehouseId: sess.warehouseId };
+  /* O papel e o almoxarifado vêm sempre do cadastro de usuários ATUAL, nunca do que foi
+     guardado no momento do login. Assim, se o admin importar um backup, trocar o almoxarifado
+     de alguém ou remover um usuário, isso vale na hora pra qualquer sessão já aberta dessa
+     pessoa — sem isso, um operador que já estava logado continuava sendo autorizado (ou
+     bloqueado) com base num almoxarifado que não existe mais. */
+  var liveUser = store.users.find(function (u) { return u.username === sess.username; });
+  if (!liveUser) { delete sessions[token]; return null; }
+  return { token: token, username: liveUser.username, role: liveUser.role, warehouseId: liveUser.warehouseId || null };
 }
 function createSession(req, res, u) {
   var token = newSessionToken();

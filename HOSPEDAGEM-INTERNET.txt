@@ -18,6 +18,11 @@ alguém precisa "pagar a conta de luz" dele) — o custo estimado é por volta d
 dependendo do uso. Vamos usar o Railway (railway.com), que é simples de configurar sem precisar
 mexer em linha de comando.
 
+Com o sistema na internet, o sinal de dados móveis/Wi‑Fi pode falhar de vez em quando dentro do
+galpão — isso já é esperado: Entrada, Saída, Ajuste e Contagem diária continuam funcionando mesmo
+sem internet (para quem já tinha entrado no aparelho) e são enviados sozinhos pro servidor assim
+que a conexão voltar. Veja "FUNCIONA SEM INTERNET?" no LEIA-ME.txt.
+
 IMPORTANTE — o que já foi reforçado nesta versão do sistema
 --------------------------------------------------------------
 Enquanto o sistema só rodava dentro da rede local, a senha só era checada na tela — não existia

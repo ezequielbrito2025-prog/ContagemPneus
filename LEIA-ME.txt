@@ -111,6 +111,27 @@ não é preciso recarregar a página.
 Ainda é possível exportar/importar um backup em .json (tela "Backup"), útil para guardar uma cópia
 de segurança ou migrar tudo para outro computador servidor no futuro.
 
+FUNCIONA SEM INTERNET? (modo offline)
+--------------------------
+Sim, para o uso do dia a dia. Se o sinal cair (Wi‑Fi fraco no galpão, dados móveis instáveis etc.),
+quem já tinha entrado no sistema NESSE aparelho continua conseguindo:
+- ver os últimos dados que chegaram antes de cair a conexão;
+- registrar Entrada, Saída, Ajuste e Contagem diária normalmente.
+Essas ações ficam guardadas no próprio aparelho e são enviadas para o servidor sozinhas, na ordem
+em que foram feitas, assim que a internet voltar — sem precisar refazer nada. Enquanto isso, o selo
+no topo da tela mostra "🔴 Offline — N pendente(s) pra sincronizar", e cada movimentação ainda não
+confirmada aparece com uma marquinha "⏳ pendente" no Histórico. Depois de sincronizar, a marquinha
+some sozinha.
+Cadastrar materiais, usuários, almoxarifados e fornecedores, e importar backup continuam exigindo
+internet — são ações mais raras e mais arriscadas de fazer sem conseguir confirmar com o servidor
+na hora (podem conflitar com o que outra pessoa mexeu enquanto isso).
+Duas observações importantes: (1) isso vale para quem JÁ TINHA ENTRADO nesse aparelho antes — um
+primeiro acesso (aparelho novo, ou depois de limpar os dados do navegador) precisa de internet pelo
+menos uma vez; (2) se o navegador ainda tiver a página guardada (o que costuma acontecer numa queda
+rápida de sinal), reabrir o app também funciona offline — mas se o navegador for fechado de vez e
+não tiver mais a página guardada, reabrir vai precisar de internet para baixar a tela de novo, mesmo
+que os dados continuem lá guardados no aparelho.
+
 ESTRUTURA DO CÓDIGO
 ----------------------
 - server.js: servidor Node.js sem dependências externas (só módulos que já vêm com o Node — não
@@ -154,14 +175,18 @@ FUNCIONALIDADES
 - Gestão de usuários (login com usuário/senha).
 - Tudo em tempo real: qualquer alteração feita em um dispositivo aparece automaticamente nos
   outros, sem recarregar a página.
+- Modo offline para o dia a dia: Entrada, Saída, Ajuste e Contagem diária continuam funcionando
+  sem internet (para quem já tinha entrado no aparelho) e sincronizam sozinhos quando a conexão
+  volta — veja "FUNCIONA SEM INTERNET?" acima.
 - Exportar/Importar backup em .json.
 
 DÚVIDAS FREQUENTES
 ----------------------
 - "Preciso deixar o computador do servidor ligado o tempo todo que a loja/equipe for usar o
   sistema?" — Sim, com a janela do "iniciar-servidor.bat" aberta.
-- "Posso usar em mais de um lugar (duas lojas, duas redes diferentes)?" — Não diretamente: todos
-  os dispositivos precisam estar na MESMA rede local do computador servidor. Para acesso pela
-  internet (fora da rede local), seria necessário outro tipo de configuração, não incluída aqui.
+- "Posso usar em mais de um lugar (duas lojas, duas redes diferentes)?" — Nesta versão de rede
+  local, não diretamente: todos os dispositivos precisam estar na MESMA rede local do computador
+  servidor. Para acessar de qualquer lugar pela internet (inclusive com o computador da loja
+  desligado), veja o arquivo HOSPEDAGEM-INTERNET.txt incluído neste pacote.
 - "Perco os dados se o servidor desligar?" — Não. Os dados ficam salvos em dados/store.json assim
   que qualquer alteração é feita; ao ligar o servidor de novo, tudo volta do jeito que estava.
